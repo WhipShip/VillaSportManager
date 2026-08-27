@@ -1,0 +1,12 @@
+---
+description: Type-safe Compose Navigation with a single NavHost
+globs: "**/*.kt"
+alwaysApply: false
+---
+
+# Modern Type-Safe Navigation
+
+- Always implement a single, centralized `NavHost` inside the main App Composable.
+- Define destinations using the modern Compose Navigation Type-Safety approach (using `@Serializable` objects or data classes). Avoid old string-based routes or custom sealed class wrappers.
+- Pass lambda parameters (e.g., `onNavigateToDetails: (AssetId) -> Unit`) to screen composables to keep them isolated, decoupled, and 100% previewable.
+- Expand the app incrementally: update the existing `NavHost` configuration without modifying or breaking older, completed screens.

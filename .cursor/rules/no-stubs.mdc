@@ -1,0 +1,10 @@
+---
+description: Production-ready code only — no TODOs, stubs, or incomplete APIs
+alwaysApply: true
+---
+
+# Zero Bugs, No Compilation Errors & No Stubs
+
+- NEVER leave `// TODO` comments, placeholders, truncated classes, or incomplete functions.
+- Every referenced Composable (e.g., custom buttons, chips, charts, lists, layouts) MUST be fully written out in the response.
+- Ensure all types, names, annotations (like `@Serializable`), and parameters match exactly between ViewModel, Screens, and NavHost to guarantee ZERO compilation errors on first run.
