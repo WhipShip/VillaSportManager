@@ -1,0 +1,16 @@
+---
+description: Fail-safe Coil image loading and allowed mock image URLs
+globs: "**/*.kt"
+alwaysApply: false
+---
+
+# Fail-Safe Images
+
+- Use `Coil` (`AsyncImage`).
+- NEVER use temporary design tool links, expired tokens, or `source.unsplash.com` (which returns 404).
+- Use these guaranteed working, high-quality, lightweight URLs for Mock Data based on context:
+  * Premium/Dark Abstract (Good for Crypto/Finance cards): `https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?auto=format&fit=crop&w=800&q=80`
+  * Tech/Data/Nodes: `https://images.unsplash.com/photo-1639762681485-074b7f938ba0?auto=format&fit=crop&w=800&q=80`
+  * Profile/Avatar/User: `https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?auto=format&fit=crop&w=200&q=80`
+  * Beach/Nature/Travel: `https://images.unsplash.com/photo-1507525428034-b723cf961d3e?auto=format&fit=crop&w=800&q=80`
+- If additional unique images are needed, strictly use: `https://picsum.photos/800/600?random=[unique_number]`.
