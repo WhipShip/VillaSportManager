@@ -1,0 +1,11 @@
+---
+description: Single Activity, MVVM, UDF, and package structure for this Android app
+alwaysApply: true
+---
+
+# Architecture & Multi-Screen Structure
+
+- Use a strict Single Activity architecture. Do NOT create multiple activities.
+- Use the MVVM pattern with a clean separation between UI (Composables) and State/Logic (ViewModel using StateFlow).
+- Implement Unidirectional Data Flow (UDF). Composables must be 100% stateless, hoisting all states and events up.
+- Code Packaging: Dynamic package matching. Leave the top `package ...` line clear or adaptable to the current directory structure.

@@ -1,0 +1,11 @@
+---
+description: Use Gradle Version Catalogs; never hardcode dependency versions
+globs: "**/*.{gradle.kts,toml}"
+alwaysApply: false
+---
+
+# Modern Dependency Management (Version Catalogs)
+
+- Do NOT hardcode dependency strings or version numbers directly inside `build.gradle.kts` files.
+- Always use the Gradle Version Catalog system (`gradle/libs.versions.toml`).
+- If a new library is required, provide the exact modification for `libs.versions.toml` under `[versions]`, `[libraries]`, and `[plugins]`, followed by the correct `implementation(libs....)` syntax for the `build.gradle.kts` file.

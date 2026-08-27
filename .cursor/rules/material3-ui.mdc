@@ -1,0 +1,13 @@
+---
+description: Pixel-perfect Material 3 UI, design system, and Canvas performance
+globs: "**/*.kt"
+alwaysApply: false
+---
+
+# Pixel-Perfect Material 3 & Custom Canvas UI
+
+- Translate all paddings, margins, and radii from the design spec strictly into `Modifier`.
+- Never hardcode fixed sizes for width/height unless strictly required (use `Modifier.fillMaxWidth()`, `weight()`, and `aspectRatio()`).
+- Use `WindowInsets` (`statusBarsPadding()`, `navigationBarsPadding()`) for modern edge-to-edge screens.
+- Adhere strictly to the project's custom Design System (`Theme.kt`, `Color.kt`) for colors and typography to maintain a premium/luxury feel.
+- PERFORMANCE FOR CANVAS: When drawing custom charts (Donut/Line charts) on `Canvas`, never allocate objects (like `Path`, `Paint`, or `Brush`) inside the `DrawScope`. Always hoist or `remember` them to avoid frequent GC pauses during animations.
