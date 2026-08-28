@@ -1,5 +1,6 @@
 package com.example.villasportmanager.di
 
+import com.example.villasportmanager.BuildConfig
 import io.github.jan.supabase.SupabaseClient
 import io.github.jan.supabase.createSupabaseClient
 import io.github.jan.supabase.auth.Auth
@@ -11,10 +12,9 @@ import kotlinx.serialization.json.jsonPrimitive
 
 object SupabaseModule {
     val client: SupabaseClient = createSupabaseClient(
-        supabaseUrl = "https://nwolxadgjtsjnyyvnwos.supabase.co",
-        supabaseKey = "sb_publishable_RAqpRGcMX_3s8Od56w8dvA_1dOFjQmk"
-    )
-    {
+        supabaseUrl = BuildConfig.SUPABASE_URL,
+        supabaseKey = BuildConfig.SUPABASE_KEY
+    ) {
         httpEngine = OkHttp.create()
         install(Postgrest)
         install(Auth)

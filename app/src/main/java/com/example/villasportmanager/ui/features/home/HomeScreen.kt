@@ -178,7 +178,7 @@ fun ButtonsGrid(
     onMyBookingsClick: () -> Unit
 ) {
     val isExpanded = windowSizeClass.widthSizeClass == WindowWidthSizeClass.Expanded
-    
+
     val items = listOf(
         "Sport Booking" to onBookingButtonClick,
         "My Bookings" to onMyBookingsClick,

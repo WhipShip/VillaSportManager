@@ -7,6 +7,7 @@ import androidx.compose.runtime.setValue
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
+import com.example.villasportmanager.data.model.Booking
 import com.example.villasportmanager.data.model.BookingRequest
 import com.example.villasportmanager.data.model.Court
 import com.example.villasportmanager.data.model.Sport
@@ -62,12 +63,20 @@ class BookingViewModel(private val repository: BookingRepository) : ViewModel() 
             BookingRepository.sports,
             BookingRepository.bookings,
             BookingRepository.isSyncing,
+            BookingRepository.isInitialized,
             _selectedDateFlow,
             _currentSportNameFlow
-        ) { sports, bookings, isSyncing, date, sportName ->
-            
-            // Only show loading if we have absolutely NO data and are currently syncing
-            isLoading = isSyncing && sports.isEmpty()
+        ) { args ->
+            val sports = args[0] as List<Sport>
+            @Suppress("UNCHECKED_CAST")
+            val bookings = args[1] as Map<String, List<Booking>>
+            val isSyncing = args[2] as Boolean
+            val isInitialized = args[3] as Boolean
+            val date = args[4] as LocalDate
+            val sportName = args[5] as String?
+
+            // Show loading if we are currently syncing OR if the cache hasn't been initialized yet
+            isLoading = isSyncing || !isInitialized
             selectedDate = date // Sync back to UI state
             
             if (sportName == null) return@combine
@@ -82,12 +91,12 @@ class BookingViewModel(private val repository: BookingRepository) : ViewModel() 
                 // 2. Map all courts and their slots instantly from the repository cache
                 sport.courts.forEach { court ->
                     val cacheKey = "${court.id}_$date"
-                    val courtBookings = bookings[cacheKey] ?: emptyList()
+                    val courtBookings = bookings[cacheKey] ?: emptyList<Booking>()
                     
                     val generatedSlots = generateSlots(sport, date)
-                    val bookedTimes = courtBookings.mapNotNull {
+                    val bookedTimes = courtBookings.mapNotNull { booking ->
                         try {
-                            val zdt = ZonedDateTime.parse(it.startTime).withZoneSameInstant(AppConstants.CLUB_ZONE_ID)
+                            val zdt = ZonedDateTime.parse(booking.startTime).withZoneSameInstant(AppConstants.CLUB_ZONE_ID)
                             if (zdt.toLocalDate() == date) zdt.toLocalTime() else null
                         } catch (e: Exception) { null }
                     }

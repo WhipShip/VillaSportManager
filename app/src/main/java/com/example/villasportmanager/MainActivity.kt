@@ -7,9 +7,13 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
-import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Surface
-import androidx.compose.material3.Text
+import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.collectAsState
+import com.example.villasportmanager.util.UpdateState
+import androidx.compose.material3.*
+import androidx.compose.foundation.layout.*
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.window.Dialog
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -35,6 +39,10 @@ import androidx.compose.material3.windowsizeclass.calculateWindowSizeClass
 
 
 
+import androidx.compose.runtime.rememberCoroutineScope
+import com.example.villasportmanager.util.UpdateManager
+import kotlinx.coroutines.launch
+
 //--------------------------------------------------------------------------------------------------
 class MainActivity : ComponentActivity() {
     @OptIn(ExperimentalMaterial3WindowSizeClassApi::class)
@@ -42,12 +50,83 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         setContent {
             val windowSizeClass = calculateWindowSizeClass(this)
+            val updateManager = remember { UpdateManager(this) }
+
+            DisposableEffect(Unit) {
+                onDispose {
+                    updateManager.unregisterReceiver()
+                }
+            }
+
+            LaunchedEffect(Unit) {
+                updateManager.checkForUpdates()
+            }
+
+            val updateState by updateManager.updateState.collectAsState()
+
             VillaSportManagerTheme {
                 Surface(
                     modifier = Modifier.fillMaxSize(),
                     color = MaterialTheme.colorScheme.background
                 ) {
                     AppNavigation(windowSizeClass)
+
+                    // Update UI Overlay
+                    when (val state = updateState) {
+                        is UpdateState.UpdateAvailable -> {
+                            AlertDialog(
+                                onDismissRequest = { updateManager.dismissUpdate() },
+                                title = { Text("Update Available") },
+                                text = { Text("A new version of Kayan Club is available. Would you like to download it now?") },
+                                confirmButton = {
+                                    Button(onClick = { updateManager.startDownload(state.update) }) {
+                                        Text("Download")
+                                    }
+                                },
+                                dismissButton = {
+                                    TextButton(onClick = { updateManager.dismissUpdate() }) {
+                                        Text("Later")
+                                    }
+                                }
+                            )
+                        }
+                        is UpdateState.Downloading -> {
+                            Dialog(onDismissRequest = {}) {
+                                Card(
+                                    modifier = Modifier.padding(16.dp),
+                                    shape = MaterialTheme.shapes.medium
+                                ) {
+                                    Column(
+                                        modifier = Modifier.padding(24.dp),
+                                        horizontalAlignment = Alignment.CenterHorizontally
+                                    ) {
+                                        CircularProgressIndicator()
+                                        Spacer(modifier = Modifier.height(16.dp))
+                                        Text("Downloading update...")
+                                    }
+                                }
+                            }
+                        }
+                        is UpdateState.ReadyToInstall -> {
+                            AlertDialog(
+                                onDismissRequest = { },
+                                title = { Text("Update Ready") },
+                                text = { Text("The update has been downloaded. Click install to update the app.") },
+                                confirmButton = {
+                                    Button(onClick = { updateManager.installApk() }) {
+                                        Text("Install Now")
+                                    }
+                                }
+                            )
+                        }
+                        is UpdateState.Error -> {
+                            // Optionally show error snackbar or toast
+                            LaunchedEffect(state) {
+                                // updateManager.dismissUpdate()
+                            }
+                        }
+                        else -> {}
+                    }
                 }
             }
         }

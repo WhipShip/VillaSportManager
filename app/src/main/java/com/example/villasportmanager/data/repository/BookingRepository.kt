@@ -18,6 +18,8 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import java.time.LocalDate
 import java.time.ZonedDateTime
 
@@ -34,6 +36,13 @@ class BookingRepository(private val supabase: SupabaseClient) {
         private val _isSyncing = MutableStateFlow(false)
         val isSyncing = _isSyncing.asStateFlow()
 
+        private val _refreshTrigger = MutableStateFlow(0)
+        val refreshTrigger = _refreshTrigger.asStateFlow()
+
+        private val _isInitialized = MutableStateFlow(false)
+        val isInitialized = _isInitialized.asStateFlow()
+
+        private val syncMutex = Mutex()
         private var isRealtimeInitialized = false
         private var lastPreloadDate: LocalDate? = null
 
@@ -52,46 +61,59 @@ class BookingRepository(private val supabase: SupabaseClient) {
         }
 
         suspend fun refreshAllData(supabase: SupabaseClient) {
-            _isSyncing.value = true
-            try {
-                // 1. Fetch Sports and Courts
-                val fetchedSports = supabase.postgrest["sports"]
-                    .select(columns = Columns.raw("id, name, slot_duration_minutes, open_time, close_time, courts(id, name, sport_id)"))
-                    .decodeList<Sport>()
-                _sports.value = fetchedSports
+            syncMutex.withLock {
+                println("Sync: Starting background data refresh...")
+                _isSyncing.value = true
+                try {
+                    // 1. Fetch Sports and Courts
+                    val fetchedSports = supabase.postgrest["sports"]
+                        .select(columns = Columns.raw("id, name, slot_duration_minutes, open_time, close_time, courts(id, name, sport_id)"))
+                        .decodeList<Sport>()
+                    _sports.value = fetchedSports
+                    println("Sync: Fetched ${fetchedSports.size} sports with courts.")
 
-                // 2. Fetch all confirmed bookings for the next 7 days
-                val startDate = LocalDate.now(AppConstants.CLUB_ZONE_ID)
-                val endDate = startDate.plusDays(7)
-                
-                val startIso = startDate.atStartOfDay().atZone(AppConstants.CLUB_ZONE_ID).toOffsetDateTime().toString()
-                val endIso = endDate.atStartOfDay().atZone(AppConstants.CLUB_ZONE_ID).toOffsetDateTime().toString()
+                    // 2. Fetch all confirmed bookings for the next 7 days
+                    val startDate = LocalDate.now(AppConstants.CLUB_ZONE_ID)
+                    val endDate = startDate.plusDays(7)
+                    
+                    val startIso = startDate.atStartOfDay().atZone(AppConstants.CLUB_ZONE_ID).toOffsetDateTime().toString()
+                    val endIso = endDate.atStartOfDay().atZone(AppConstants.CLUB_ZONE_ID).toOffsetDateTime().toString()
 
-                val allBookings = supabase.postgrest["bookings"]
-                    .select {
-                        filter {
-                            eq("status", "confirmed")
-                            gte("start_time", startIso)
-                            lt("start_time", endIso)
+                    println("Sync: Fetching bookings from $startIso to $endIso")
+
+                    val allBookings = supabase.postgrest["bookings"]
+                        .select {
+                            filter {
+                                eq("status", "confirmed")
+                                gte("start_time", startIso)
+                                lt("start_time", endIso)
+                            }
+                        }.decodeList<Booking>()
+                    
+                    println("Sync: Fetched ${allBookings.size} total bookings for the 7-day window.")
+
+                    // 3. Group bookings by courtId_date and update the flow
+                    val newBookingsMap = allBookings.groupBy { booking ->
+                        try {
+                            val zdt = ZonedDateTime.parse(booking.startTime).withZoneSameInstant(AppConstants.CLUB_ZONE_ID)
+                            "${booking.courtId}_${zdt.toLocalDate()}"
+                        } catch (e: Exception) {
+                            null
                         }
-                    }.decodeList<Booking>()
+                    }.filterKeys { it != null } as Map<String, List<Booking>>
 
-                // 3. Group bookings by courtId_date and update the flow
-                val newBookingsMap = allBookings.groupBy { booking ->
-                    try {
-                        val zdt = ZonedDateTime.parse(booking.startTime).withZoneSameInstant(AppConstants.CLUB_ZONE_ID)
-                        "${booking.courtId}_${zdt.toLocalDate()}"
-                    } catch (e: Exception) {
-                        "unknown"
-                    }
-                }.filterKeys { it != "unknown" }
-
-                _bookings.value = newBookingsMap
-            } catch (e: Exception) {
-                println("Preload/Sync Error: ${e.message}")
-                e.printStackTrace()
-            } finally {
-                _isSyncing.value = false
+                    _bookings.value = newBookingsMap
+                    _refreshTrigger.value += 1
+                    _isInitialized.value = true
+                    lastPreloadDate = startDate
+                    println("Sync: Successfully updated bookings cache.")
+                } catch (e: Exception) {
+                    println("Sync Error: ${e.message}")
+                    e.printStackTrace()
+                } finally {
+                    _isSyncing.value = false
+                    println("Sync: Finished background refresh.")
+                }
             }
         }
 
@@ -100,21 +122,40 @@ class BookingRepository(private val supabase: SupabaseClient) {
             isRealtimeInitialized = true
 
             scope.launch {
-                try {
-                    supabase.realtime.connect()
-                    val channel = supabase.realtime.channel("global_booking_updates")
-                    val flow = channel.postgresChangeFlow<PostgresAction>(schema = "public") {
-                        table = "bookings"
-                    }
-                    channel.subscribe()
-                    
-                    flow.collect {
-                        // On any change, trigger a background refresh to keep the cache consistent
+                var retryDelay = 2000L
+                while (true) {
+                    try {
+                        println("Realtime: Connecting...")
+                        supabase.realtime.connect()
+                        
+                        val channel = supabase.realtime.channel("global_booking_updates")
+                        val flow = channel.postgresChangeFlow<PostgresAction>(schema = "public") {
+                            table = "bookings"
+                        }
+                        channel.subscribe()
+                        
+                        println("Realtime: Subscribed to bookings table.")
+                        // Initial refresh once connected to ensure we didn't miss anything
                         refreshAllData(supabase)
+                        
+                        retryDelay = 2000L // Reset delay on success
+                        
+                        flow.collect { action ->
+                            println("Realtime: Change detected: $action")
+                            // On any change, trigger a background refresh to keep the cache consistent
+                            refreshAllData(supabase)
+                        }
+                    } catch (e: Exception) {
+                        println("Realtime Error: ${e.message}. Retrying in ${retryDelay/1000}s...")
+                        e.printStackTrace()
+                        isRealtimeInitialized = false
+                        try {
+                            supabase.realtime.disconnect()
+                        } catch (de: Exception) { /* ignore */ }
                     }
-                } catch (e: Exception) {
-                    isRealtimeInitialized = false
-                    e.printStackTrace()
+                    
+                    kotlinx.coroutines.delay(retryDelay)
+                    retryDelay = (retryDelay * 2).coerceAtMost(30000L) // Exponential backoff
                 }
             }
         }
