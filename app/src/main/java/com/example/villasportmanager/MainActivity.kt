@@ -27,66 +27,30 @@ import io.github.jan.supabase.postgrest.from
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.Serializable
+import com.example.villasportmanager.ui.navigation.AppNavigation
+import androidx.compose.material3.windowsizeclass.ExperimentalMaterial3WindowSizeClassApi
+import androidx.compose.material3.windowsizeclass.calculateWindowSizeClass
 
 //--------------------------------------------------------------------------------------------------
-val supabase: SupabaseClient = createSupabaseClient(
-    supabaseUrl = "https://nwolxadgjtsjnyyvnwos.supabase.co",
-    supabaseKey = "sb_publishable_RAqpRGcMX_3s8Od56w8dvA_1dOFjQmk"
-)
-{
-    install(Postgrest)
-}
 
-@Serializable
-data class Instrument(
-    val id: Int,
-    val name: String,
-)
+
+
 //--------------------------------------------------------------------------------------------------
 class MainActivity : ComponentActivity() {
+    @OptIn(ExperimentalMaterial3WindowSizeClassApi::class)
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContent {
-            // A surface container using the 'background' color from the theme
-            Surface(
-                modifier = Modifier.fillMaxSize(),
-                color = MaterialTheme.colorScheme.background
-            ) {
-                InstrumentsList()
+            val windowSizeClass = calculateWindowSizeClass(this)
+            VillaSportManagerTheme {
+                Surface(
+                    modifier = Modifier.fillMaxSize(),
+                    color = MaterialTheme.colorScheme.background
+                ) {
+                    AppNavigation(windowSizeClass)
+                }
             }
         }
     }
 }
-@Composable
-fun InstrumentsList() {
-    var instruments by remember { mutableStateOf<List<Instrument>>(listOf()) }
-    var error by remember { mutableStateOf<String?>(null) }
-    LaunchedEffect(Unit) {
-        withContext(Dispatchers.IO) {
-            try {
-                instruments = supabase.from("instruments")
-                    .select().decodeList<Instrument>()
-            } catch (e: Exception) {
-                error = e.message
-            }
-        }
-    }
-    if (error != null) {
-        Text(
-            "Error loading instruments: $error",
-            modifier = Modifier.padding(8.dp),
-        )
-        return
-    }
-    LazyColumn {
-        items(
-            instruments,
-            key = { instrument -> instrument.id },
-        ) { instrument ->
-            Text(
-                instrument.name,
-                modifier = Modifier.padding(8.dp),
-            )
-        }
-    }
-}
+
