@@ -10,6 +10,8 @@ import com.example.villasportmanager.data.model.UserBooking
 import com.example.villasportmanager.data.repository.BookingRepository
 import com.example.villasportmanager.di.SupabaseModule
 import io.github.jan.supabase.auth.auth
+import kotlinx.coroutines.flow.launchIn
+import kotlinx.coroutines.flow.onEach
 import kotlinx.coroutines.launch
 
 class MyBookingsViewModel(private val repository: BookingRepository) : ViewModel() {
@@ -22,6 +24,13 @@ class MyBookingsViewModel(private val repository: BookingRepository) : ViewModel
     var isCancelling by mutableStateOf(false)
     var cancellationError by mutableStateOf<String?>(null)
     var cancellationSuccess by mutableStateOf(false)
+
+    init {
+        // Automatically reload when global data is refreshed or synced
+        BookingRepository.refreshTrigger.onEach {
+            loadBookings()
+        }.launchIn(viewModelScope)
+    }
 
     fun loadBookings() {
         val userId = SupabaseModule.client.auth.currentUserOrNull()?.id ?: return

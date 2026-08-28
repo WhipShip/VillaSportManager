@@ -41,20 +41,24 @@ import kotlinx.coroutines.launch
 fun AppNavigation(windowSizeClass: WindowSizeClass) {
     val scope = rememberCoroutineScope()
     
-    // Initialize global realtime sync and PRELOAD all data for background caching
-    LaunchedEffect(Unit) {
-        com.example.villasportmanager.data.repository.BookingRepository.initializeGlobalRealtime(
-            SupabaseModule.client, 
-            scope
-        )
-        com.example.villasportmanager.data.repository.BookingRepository.preloadData(
-            SupabaseModule.client,
-            scope
-        )
-    }
-
-    // 1. Observe the current session state from Supabase
+    // Observe the current session state from Supabase
     val sessionStatus by SupabaseModule.client.auth.sessionStatus.collectAsState()
+
+    // Initialize global realtime sync and PRELOAD all data for background caching
+    // We trigger this when the user becomes authenticated to ensure data is fetched
+    // correctly after login on a fresh install.
+    LaunchedEffect(sessionStatus) {
+        if (sessionStatus is SessionStatus.Authenticated) {
+            com.example.villasportmanager.data.repository.BookingRepository.initializeGlobalRealtime(
+                SupabaseModule.client, 
+                scope
+            )
+            com.example.villasportmanager.data.repository.BookingRepository.preloadData(
+                SupabaseModule.client,
+                scope
+            )
+        }
+    }
 
     // 2. Show a loading screen while Supabase checks local storage
     if (sessionStatus is SessionStatus.Initializing) {

@@ -29,10 +29,6 @@ fun MyBookingsScreen(
     val snackbarHostState = remember { SnackbarHostState() }
     var bookingToCancel by remember { mutableStateOf<UserBooking?>(null) }
 
-    LaunchedEffect(Unit) {
-        viewModel.loadBookings()
-    }
-
     LaunchedEffect(viewModel.cancellationSuccess, viewModel.cancellationError) {
         if (viewModel.cancellationSuccess) {
             snackbarHostState.showSnackbar("Booking cancelled successfully")
