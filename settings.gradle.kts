@@ -22,5 +22,5 @@ dependencyResolutionManagement {
     }
 }
 
-rootProject.name = "VillaSportManager"
+rootProject.name = "Kayan Club"
 include(":app")
