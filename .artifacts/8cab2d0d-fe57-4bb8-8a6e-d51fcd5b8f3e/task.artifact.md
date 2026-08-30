@@ -1,0 +1,7 @@
+- [ ] Install `Storage` in `SupabaseModule.kt`
+- [ ] Create `PatchInfo` and `VersionInfo` models
+- [ ] Implement `UpdateRepository`
+- [ ] Implement `UpdateUtils` with patching and installation logic
+- [ ] Implement `UpdaterViewModel`
+- [ ] Create `UpdaterScreen`
+- [ ] Integrate with `MainActivity` and remove old `UpdateManager`

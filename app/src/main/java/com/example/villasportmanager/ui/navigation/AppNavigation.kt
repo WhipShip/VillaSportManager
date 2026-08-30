@@ -38,7 +38,10 @@ import io.github.jan.supabase.auth.auth
 import kotlinx.coroutines.launch
 
 @Composable
-fun AppNavigation(windowSizeClass: WindowSizeClass) {
+fun AppNavigation(
+    windowSizeClass: WindowSizeClass,
+    onUpdateClick: () -> Unit
+) {
     val scope = rememberCoroutineScope()
     
     // Observe the current session state from Supabase
@@ -115,6 +118,7 @@ fun AppNavigation(windowSizeClass: WindowSizeClass) {
                 onMyBookingsClick = {
                     navController.navigate("my_bookings")
                 },
+                onUpdateClick = onUpdateClick,
                 onLogOutClick = {
                     scope.launch {
                         SupabaseModule.client.auth.signOut()
@@ -126,10 +130,16 @@ fun AppNavigation(windowSizeClass: WindowSizeClass) {
         // --- SPORT SELECTION SCREEN ---
         composable("sport_selection") {
             SportSelectionScreen(
+                windowSizeClass = windowSizeClass,
                 onSportSelected = { sportName ->
                     navController.navigate("booking/$sportName")
                 },
-                onBackClick = { navController.popBackStack() }
+                onBackClick = { navController.popBackStack() },
+                onHomeClick = {
+                    navController.navigate("home") {
+                        popUpTo("home") { inclusive = true }
+                    }
+                }
             )
         }
 

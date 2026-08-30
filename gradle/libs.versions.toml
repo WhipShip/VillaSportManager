@@ -45,6 +45,8 @@ ktor-client-okhttp = { group = "io.ktor", name = "ktor-client-okhttp", version.r
 ktor-client-websockets = { group = "io.ktor", name = "ktor-client-websockets", version.ref = "ktor" }
 multiplatform-settings-no-arg = { group = "com.russhwolf", name = "multiplatform-settings-no-arg", version.ref = "multiplatformSettings" }
 kotlinx-serialization-json = { group = "org.jetbrains.kotlinx", name = "kotlinx-serialization-json", version.ref = "kotlinxSerialization" }
+supabase-storage = { group = "io.github.jan-tennert.supabase", name = "storage-kt" }
+jbsdiff = { group = "io.sigpipe", name = "jbsdiff", version = "1.0" }
 
 [plugins]
 android-application = { id = "com.android.application", version.ref = "agp" }

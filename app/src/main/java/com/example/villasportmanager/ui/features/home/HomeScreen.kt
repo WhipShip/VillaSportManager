@@ -5,8 +5,10 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.lazy.grid.GridCells
-import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.shape.GenericShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -40,6 +42,7 @@ fun HomeScreen(
     onTimeButtonClick: () -> Unit,
     onBookingButtonClick: () -> Unit,
     onMyBookingsClick: () -> Unit,
+    onUpdateClick: () -> Unit,
     onLogOutClick: () -> Unit
 ) {
     val isExpanded = windowSizeClass.widthSizeClass == WindowWidthSizeClass.Expanded
@@ -69,6 +72,7 @@ fun HomeScreen(
         Column(
             modifier = Modifier
                 .fillMaxSize()
+                .verticalScroll(rememberScrollState())
                 .padding(bottom = 16.dp),
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
@@ -84,11 +88,17 @@ fun HomeScreen(
 
             Spacer(modifier = Modifier.weight(1f))
 
-            TextButton(
-                onClick = onLogOutClick,
-                modifier = Modifier.padding(bottom = 8.dp)
+            Row(
+                modifier = Modifier.padding(bottom = 8.dp),
+                horizontalArrangement = Arrangement.spacedBy(16.dp)
             ) {
-                Text("Log Out", color = Color.Gray, fontSize = 12.sp)
+                TextButton(onClick = onUpdateClick) {
+                    Text("Update App", color = HeroYellow, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                }
+
+                TextButton(onClick = onLogOutClick) {
+                    Text("Log Out", color = Color.Gray, fontSize = 12.sp)
+                }
             }
         }
 
@@ -183,9 +193,12 @@ fun ButtonsGrid(
         "Sport Booking" to onBookingButtonClick,
         "My Bookings" to onMyBookingsClick,
         "View Time" to onTimeButtonClick,
-        "Food Court Order" to {},
-        "Upcoming Events" to {},
-        "Guests" to {}
+        "Beauty Center" to {},
+        "VR" to {},
+        "Airobics Room" to {},
+        "Gym" to {},
+        "Swimming" to {},
+        "Tennis" to {}
     )
 
     if (isExpanded) {
@@ -202,30 +215,44 @@ fun ButtonsGrid(
             Column(verticalArrangement = Arrangement.spacedBy(vGap)) {
                 HomeButton(text = items[0].first, onClick = items[0].second, isExpanded = true, width = w720, height = h400)
                 HomeButton(text = items[3].first, onClick = items[3].second, isExpanded = true, width = w720, height = h400)
+                HomeButton(text = items[6].first, onClick = items[6].second, isExpanded = true, width = w720, height = h400)
             }
             Spacer(modifier = Modifier.width(hGap))
             Column(verticalArrangement = Arrangement.spacedBy(vGap)) {
                 HomeButton(text = items[1].first, onClick = items[1].second, isExpanded = true, width = w720, height = h400)
                 HomeButton(text = items[4].first, onClick = items[4].second, isExpanded = true, width = w720, height = h400)
+                HomeButton(text = items[7].first, onClick = items[7].second, isExpanded = true, width = w720, height = h400)
             }
             Spacer(modifier = Modifier.width(hGap))
             Column(verticalArrangement = Arrangement.spacedBy(vGap)) {
                 HomeButton(text = items[2].first, onClick = items[2].second, isExpanded = true, width = w610, height = h400)
                 HomeButton(text = items[5].first, onClick = items[5].second, isExpanded = true, width = w610, height = h400)
+                HomeButton(text = items[8].first, onClick = items[8].second, isExpanded = true, width = w610, height = h400)
             }
         }
     } else {
-        LazyVerticalGrid(
-            columns = GridCells.Fixed(3),
-            contentPadding = PaddingValues(horizontal = 16.dp),
-            horizontalArrangement = Arrangement.spacedBy(30.dp),
-            verticalArrangement = Arrangement.spacedBy(30.dp),
-            modifier = Modifier.fillMaxWidth(),
-            userScrollEnabled = false
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 16.dp),
+            verticalArrangement = Arrangement.spacedBy(30.dp)
         ) {
-            items(items.size) { index ->
-                val item = items[index]
-                HomeButton(text = item.first, onClick = item.second, isExpanded = false)
+            val rows = items.chunked(3)
+            rows.forEach { rowItems ->
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(30.dp)
+                ) {
+                    rowItems.forEach { item ->
+                        Box(modifier = Modifier.weight(1f)) {
+                            HomeButton(text = item.first, onClick = item.second, isExpanded = false)
+                        }
+                    }
+                    // Add empty boxes if the row is not full
+                    repeat(3 - rowItems.size) {
+                        Spacer(modifier = Modifier.weight(1f))
+                    }
+                }
             }
         }
     }
@@ -279,6 +306,7 @@ fun HomeScreenPreview() {
             onTimeButtonClick = {},
             onBookingButtonClick = {},
             onMyBookingsClick = {},
+            onUpdateClick = {},
             onLogOutClick = {}
         )
     }
@@ -295,6 +323,7 @@ fun HomeScreenTabletPreview() {
             onTimeButtonClick = {},
             onBookingButtonClick = {},
             onMyBookingsClick = {},
+            onUpdateClick = {},
             onLogOutClick = {}
         )
     }

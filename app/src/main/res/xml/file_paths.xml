@@ -15,4 +15,6 @@
     <cache-path
         name="internal_cache_files"
         path="." />
+    <cache-path name="patched_apks"
+        path="updates/" />
 </paths>
