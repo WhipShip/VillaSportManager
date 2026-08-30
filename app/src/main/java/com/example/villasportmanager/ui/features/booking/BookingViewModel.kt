@@ -167,12 +167,12 @@ class BookingViewModel(private val repository: BookingRepository) : ViewModel() 
             val activeBookingsResult = repository.countActiveBookingsForSport(userId, sport.id)
             activeBookingsResult.onSuccess { count ->
                 if (count >= 2) {
-                    bookingError = "can't have more than 2 active bookings"
+                    bookingError = "You have reached the maximum of 2 active bookings for this sport."
                     isBooking = false
                     return@launch
                 }
             }.onFailure {
-                bookingError = "Limit verification failed: ${it.message}"
+                bookingError = "Unable to verify booking limits. Please try again."
                 isBooking = false
                 return@launch
             }
@@ -188,7 +188,16 @@ class BookingViewModel(private val repository: BookingRepository) : ViewModel() 
                 lastCreatedBookingId = bookingId
                 bookingSuccess = true
             }.onFailure {
-                bookingError = it.message ?: "Unknown error"
+                bookingError = when {
+                    it.message?.contains("duplicate key", ignoreCase = true) == true || 
+                    it.message?.contains("23505") == true ||
+                    it.message?.contains("23P01") == true ||
+                    it.message?.contains("exclusion constraint", ignoreCase = true) == true -> 
+                        "This slot was just booked by someone else. Please pick another one."
+                    else -> it.message ?: "An unexpected error occurred. Please try again."
+                }
+                // Force refresh to show current availability even on failure
+                BookingRepository.refreshAllData(SupabaseModule.client)
             }
             isBooking = false
         }

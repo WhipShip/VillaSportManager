@@ -62,11 +62,18 @@ fun BookingScreen(
         }
     }
 
-    LaunchedEffect(viewModel.bookingError) {
-        viewModel.bookingError?.let { error ->
-            snackbarHostState.showSnackbar("Error: $error")
-            viewModel.clearBookingStatus()
-        }
+    // Error Dialog
+    viewModel.bookingError?.let { error ->
+        AlertDialog(
+            onDismissRequest = { viewModel.clearBookingStatus() },
+            title = { Text("Booking Status") },
+            text = { Text(error) },
+            confirmButton = {
+                TextButton(onClick = { viewModel.clearBookingStatus() }) {
+                    Text("OK")
+                }
+            }
+        )
     }
 
     Scaffold(
