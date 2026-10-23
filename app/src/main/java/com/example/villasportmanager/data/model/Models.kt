@@ -26,6 +26,7 @@ data class Booking(
     @SerialName("start_time") val startTime: String, // Comes in as ISO8601 e.g. "2026-08-27T10:00:00+00:00"
     @SerialName("end_time") val endTime: String,
     @SerialName("court_id") val courtId: String? = null,
+    @SerialName("user_id") val userId: String? = null,
     val status: String? = null
 )
 
@@ -50,5 +51,7 @@ data class BookingRequest(
 // This is just for our UI state - not for Supabase
 data class TimeSlot(
     val time: LocalTime,
-    val isBooked: Boolean = false
+    val isBooked: Boolean = false,
+    /** True when the booking occupying this slot belongs to the signed-in villa. */
+    val isMine: Boolean = false
 )

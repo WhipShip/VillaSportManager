@@ -1,10 +1,13 @@
 package com.example.villasportmanager.ui.navigation
 
+import android.net.Uri
 import androidx.compose.animation.EnterTransition
 import androidx.compose.animation.ExitTransition
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.windowsizeclass.WindowSizeClass
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
@@ -13,14 +16,20 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.material3.windowsizeclass.WindowSizeClass
+import androidx.lifecycle.viewmodel.compose.viewModel
+import androidx.navigation.NavHostController
+import androidx.navigation.NavType
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
+import androidx.navigation.navArgument
+import com.example.villasportmanager.data.repository.BookingRepository
 import com.example.villasportmanager.di.SupabaseModule
 import com.example.villasportmanager.di.getDisplayName
+import com.example.villasportmanager.ui.components.KayanFormat
 import com.example.villasportmanager.ui.features.auth.SignInScreen
 import com.example.villasportmanager.ui.features.booking.BookingScreen
+import com.example.villasportmanager.ui.features.booking.BookingSuccessScreen
 import com.example.villasportmanager.ui.features.booking.BookingViewModel
 import com.example.villasportmanager.ui.features.booking.BookingViewModelFactory
 import com.example.villasportmanager.ui.features.booking.CourtScreen
@@ -30,11 +39,12 @@ import com.example.villasportmanager.ui.features.booking.MyBookingsScreen
 import com.example.villasportmanager.ui.features.booking.MyBookingsViewModel
 import com.example.villasportmanager.ui.features.booking.MyBookingsViewModelFactory
 import com.example.villasportmanager.ui.features.booking.SportSelectionScreen
-import com.example.villasportmanager.ui.features.booking.BookingSuccessScreen
 import com.example.villasportmanager.ui.features.home.HomeScreen
-import com.example.villasportmanager.ui.features.home.TimeScreen
-import io.github.jan.supabase.auth.status.SessionStatus
+import com.example.villasportmanager.ui.features.home.summarizeUpcoming
+import com.example.villasportmanager.ui.theme.KayanGreen
+import com.example.villasportmanager.ui.theme.Mist
 import io.github.jan.supabase.auth.auth
+import io.github.jan.supabase.auth.status.SessionStatus
 import kotlinx.coroutines.launch
 
 @Composable
@@ -43,41 +53,29 @@ fun AppNavigation(
     onUpdateClick: () -> Unit
 ) {
     val scope = rememberCoroutineScope()
-    
+
     // Observe the current session state from Supabase
     val sessionStatus by SupabaseModule.client.auth.sessionStatus.collectAsState()
+    // Sports + courts cache, shared by several screens
+    val sports by BookingRepository.sports.collectAsState()
 
-    // Initialize global realtime sync and PRELOAD all data for background caching
-    // We trigger this when the user becomes authenticated to ensure data is fetched
-    // correctly after login on a fresh install.
+    // Initialize global realtime sync and preload all data once the user is authenticated
     LaunchedEffect(sessionStatus) {
         if (sessionStatus is SessionStatus.Authenticated) {
-            com.example.villasportmanager.data.repository.BookingRepository.initializeGlobalRealtime(
-                SupabaseModule.client, 
-                scope
-            )
-            com.example.villasportmanager.data.repository.BookingRepository.preloadData(
-                SupabaseModule.client,
-                scope
-            )
+            BookingRepository.initializeGlobalRealtime(SupabaseModule.client, scope)
+            BookingRepository.preloadData(SupabaseModule.client, scope)
         }
     }
 
-    // 2. Show a loading screen while Supabase checks local storage
+    // Show a loading screen while Supabase checks local storage
     if (sessionStatus is SessionStatus.Initializing) {
-        Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-            CircularProgressIndicator()
+        Box(modifier = Modifier.fillMaxSize().background(Mist), contentAlignment = Alignment.Center) {
+            CircularProgressIndicator(color = KayanGreen)
         }
         return
     }
 
-    // 3. Dynamically set the start destination based on the result
-    val startDestination = if (sessionStatus is SessionStatus.Authenticated) {
-        "home"
-    } else {
-        "signin"
-    }
-
+    val startDestination = if (sessionStatus is SessionStatus.Authenticated) "home" else "signin"
     val navController = rememberNavController()
 
     NavHost(
@@ -88,9 +86,10 @@ fun AppNavigation(
         popEnterTransition = { EnterTransition.None },
         popExitTransition = { ExitTransition.None }
     ) {
-        // --- SIGN IN SCREEN ---
+        // --- SIGN IN ---
         composable("signin") {
             SignInScreen(
+                windowSizeClass = windowSizeClass,
                 onSignInSuccess = {
                     navController.navigate("home") {
                         // Clear the backstack so pressing 'back' doesn't reopen the login page
@@ -100,159 +99,133 @@ fun AppNavigation(
             )
         }
 
-        // --- HOME SCREEN ---
+        // --- HOME ---
         composable("home") {
             val displayName = remember { SupabaseModule.client.getDisplayName() }
+            val bookingsViewModel: MyBookingsViewModel = viewModel(factory = MyBookingsViewModelFactory())
+            val (nextBooking, upcomingCount) = remember(bookingsViewModel.bookings, sports) {
+                summarizeUpcoming(bookingsViewModel.bookings, sports)
+            }
 
             HomeScreen(
                 displayName = displayName,
                 windowSizeClass = windowSizeClass,
-                onTimeButtonClick = {
-                    // Navigates to the time screen
-                    navController.navigate("time")
-                },
-                onBookingButtonClick = {
-                    // Navigates to the sport selection screen
-                    navController.navigate("sport_selection")
-                },
-                onMyBookingsClick = {
-                    navController.navigate("my_bookings")
+                nextBooking = nextBooking,
+                upcomingCount = upcomingCount,
+                onSportBookingClick = { navController.navigate("sport_selection") },
+                onMyBookingsClick = { navController.navigate("my_bookings") },
+                onServiceClick = { service ->
+                    // Only services that are also sports can be booked in the app today
+                    service.sportName?.let { navController.navigate("booking/${Uri.encode(it)}") }
                 },
                 onUpdateClick = onUpdateClick,
                 onLogOutClick = {
-                    scope.launch {
-                        SupabaseModule.client.auth.signOut()
-                    }
+                    scope.launch { SupabaseModule.client.auth.signOut() }
                 }
             )
         }
 
-        // --- SPORT SELECTION SCREEN ---
+        // --- SPORT SELECTION ---
         composable("sport_selection") {
             SportSelectionScreen(
                 windowSizeClass = windowSizeClass,
-                onSportSelected = { sportName ->
-                    navController.navigate("booking/$sportName")
-                },
+                sportNames = sports.map { it.name },
+                onSportSelected = { sportName -> navController.navigate("booking/${Uri.encode(sportName)}") },
                 onBackClick = { navController.popBackStack() },
-                onHomeClick = {
-                    navController.navigate("home") {
-                        popUpTo("home") { inclusive = true }
-                    }
-                }
+                onHomeClick = { navController.popToHome() }
             )
         }
 
-        // --- MY BOOKINGS SCREEN ---
+        // --- MY BOOKINGS ---
         composable("my_bookings") {
-            val viewModel: MyBookingsViewModel = androidx.lifecycle.viewmodel.compose.viewModel(
-                factory = MyBookingsViewModelFactory()
-            )
+            val viewModel: MyBookingsViewModel = viewModel(factory = MyBookingsViewModelFactory())
             MyBookingsScreen(
                 viewModel = viewModel,
                 windowSizeClass = windowSizeClass,
+                sports = sports,
                 onBackClick = { navController.popBackStack() }
             )
         }
 
-        // --- BOOKING SCREEN ---
+        // --- BOOKING ---
         composable(
             route = "booking/{sportName}",
-            arguments = listOf(
-                androidx.navigation.navArgument("sportName") { type = androidx.navigation.NavType.StringType }
-            )
+            arguments = listOf(navArgument("sportName") { type = NavType.StringType })
         ) { backStackEntry ->
             val sportName = backStackEntry.arguments?.getString("sportName") ?: ""
-            val viewModel: BookingViewModel = androidx.lifecycle.viewmodel.compose.viewModel(
-                factory = BookingViewModelFactory()
-            )
+            val viewModel: BookingViewModel = viewModel(factory = BookingViewModelFactory())
 
             LaunchedEffect(sportName) {
-                viewModel.filterBySport(sportName)
+                if (viewModel.currentSportName == null) viewModel.filterBySport(sportName)
             }
 
             BookingScreen(
                 viewModel = viewModel,
                 windowSizeClass = windowSizeClass,
                 onBackClick = { navController.popBackStack() },
-                onBookingSuccess = { courtName, date, time ->
-                    val encCourt = android.net.Uri.encode(courtName)
-                    val encDate = android.net.Uri.encode(date)
-                    val encTime = android.net.Uri.encode(time)
-                    navController.navigate("booking_success/$encCourt/$encDate/$encTime")
+                onBookingConfirmed = { booking ->
+                    val args = listOf(
+                        booking.bookingId,
+                        booking.sportName,
+                        booking.courtName,
+                        booking.date.format(KayanFormat.dateLong),
+                        KayanFormat.range(booking.startTime, booking.endTime)
+                    ).joinToString("/") { Uri.encode(it) }
+                    navController.navigate("booking_success/$args")
                 }
             )
         }
 
+        // --- BOOKING SUCCESS ---
         composable(
-            route = "booking_success/{courtName}/{date}/{time}",
+            route = "booking_success/{bookingId}/{sportName}/{courtName}/{date}/{time}",
             arguments = listOf(
-                androidx.navigation.navArgument("courtName") { type = androidx.navigation.NavType.StringType },
-                androidx.navigation.navArgument("date") { type = androidx.navigation.NavType.StringType },
-                androidx.navigation.navArgument("time") { type = androidx.navigation.NavType.StringType }
+                navArgument("bookingId") { type = NavType.StringType },
+                navArgument("sportName") { type = NavType.StringType },
+                navArgument("courtName") { type = NavType.StringType },
+                navArgument("date") { type = NavType.StringType },
+                navArgument("time") { type = NavType.StringType }
             )
         ) { backStackEntry ->
-            val courtName = backStackEntry.arguments?.getString("courtName") ?: ""
-            val date = backStackEntry.arguments?.getString("date") ?: ""
-            val time = backStackEntry.arguments?.getString("time") ?: ""
-            
-            // We need a ViewModel to handle the cancellation. 
-            // We can reuse the BookingViewModel if it's scoped properly, 
-            // but for a clean success screen, let's use the same instance or a shared one.
-            // For now, we'll get a fresh one or handle it via a new navigation call.
-            val viewModel: BookingViewModel = androidx.lifecycle.viewmodel.compose.viewModel(
-                factory = BookingViewModelFactory()
-            )
-            
+            val args = backStackEntry.arguments
+            // The success screen owns its own ViewModel; it cancels by the booking id passed in the route.
+            val viewModel: BookingViewModel = viewModel(factory = BookingViewModelFactory())
+
             BookingSuccessScreen(
-                courtName = courtName,
-                date = date,
-                time = time,
+                bookingId = args?.getString("bookingId") ?: "",
+                sportName = args?.getString("sportName") ?: "",
+                courtName = args?.getString("courtName") ?: "",
+                dateLabel = args?.getString("date") ?: "",
+                timeLabel = args?.getString("time") ?: "",
+                windowSizeClass = windowSizeClass,
                 viewModel = viewModel,
-                onBackClick = {
-                    navController.popBackStack("sport_selection", inclusive = false)
-                },
-                onCancelClick = {
-                    viewModel.cancelLastBooking()
+                onDoneClick = {
+                    // Back to the sport list if we came through it, otherwise home
+                    if (!navController.popBackStack("sport_selection", inclusive = false)) {
+                        navController.popToHome()
+                    }
                 }
             )
         }
 
-        // --- TIME SCREEN ---
-        composable("time") {
-            TimeScreen(
-                onBackClick = {
-                    // Pops the current screen off the stack to go back home
-                    navController.popBackStack()
-                }
-            )
-        }
-
-// 2. The Screen that shows the Time Slots
+        // --- COURT (single-court schedule, kept for direct links) ---
         composable(
             route = "court/{courtId}/{courtName}/{openTime}/{closeTime}/{duration}",
             arguments = listOf(
-                androidx.navigation.navArgument("courtId") { type = androidx.navigation.NavType.StringType },
-                androidx.navigation.navArgument("courtName") { type = androidx.navigation.NavType.StringType },
-                androidx.navigation.navArgument("openTime") { type = androidx.navigation.NavType.StringType },
-                androidx.navigation.navArgument("closeTime") { type = androidx.navigation.NavType.StringType },
-                androidx.navigation.navArgument("duration") { type = androidx.navigation.NavType.IntType }
+                navArgument("courtId") { type = NavType.StringType },
+                navArgument("courtName") { type = NavType.StringType },
+                navArgument("openTime") { type = NavType.StringType },
+                navArgument("closeTime") { type = NavType.StringType },
+                navArgument("duration") { type = NavType.IntType }
             )
         ) { backStackEntry ->
-
-            // Extract the arguments
             val courtId = backStackEntry.arguments?.getString("courtId") ?: ""
             val courtName = backStackEntry.arguments?.getString("courtName") ?: ""
             val openTime = backStackEntry.arguments?.getString("openTime") ?: "08:00:00"
             val closeTime = backStackEntry.arguments?.getString("closeTime") ?: "22:00:00"
             val duration = backStackEntry.arguments?.getInt("duration") ?: 60
 
-            // Get the ViewModel and trigger the load
-            val viewModel: CourtViewModel = androidx.lifecycle.viewmodel.compose.viewModel(
-                factory = CourtViewModelFactory()
-            )
-
-            // LaunchedEffect ensures this only runs once when the screen opens
+            val viewModel: CourtViewModel = viewModel(factory = CourtViewModelFactory())
             LaunchedEffect(courtId) {
                 viewModel.loadSchedule(courtId, openTime, closeTime, duration)
             }
@@ -264,7 +237,11 @@ fun AppNavigation(
                 onBackClick = { navController.popBackStack() }
             )
         }
+    }
+}
 
-
+private fun NavHostController.popToHome() {
+    navigate("home") {
+        popUpTo("home") { inclusive = true }
     }
 }

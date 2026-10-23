@@ -1,244 +1,162 @@
 package com.example.villasportmanager.ui.features.booking
 
-import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
-import androidx.compose.foundation.border
-import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.aspectRatio
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.navigationBarsPadding
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.statusBarsPadding
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.foundation.shape.GenericShape
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.ArrowBack
-import androidx.compose.material.icons.filled.Home
-import androidx.compose.material3.*
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Text
+import androidx.compose.material3.windowsizeclass.ExperimentalMaterial3WindowSizeClassApi
+import androidx.compose.material3.windowsizeclass.WindowSizeClass
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Brush
-import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.layout.ContentScale
-import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.tooling.preview.Preview
+import androidx.compose.ui.unit.DpSize
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.villasportmanager.R
-import com.example.villasportmanager.ui.theme.*
-import androidx.compose.material3.windowsizeclass.WindowSizeClass
-import androidx.compose.material3.windowsizeclass.WindowWidthSizeClass
+import com.example.villasportmanager.ui.components.GlassIconButton
+import com.example.villasportmanager.ui.components.KayanIcons
+import com.example.villasportmanager.ui.components.LayoutTier
+import com.example.villasportmanager.ui.components.PhotoCard
+import com.example.villasportmanager.ui.components.PhotoHero
+import com.example.villasportmanager.ui.components.layoutTier
+import com.example.villasportmanager.ui.components.sportImageRes
+import com.example.villasportmanager.ui.theme.BricolageGrotesque
+import com.example.villasportmanager.ui.theme.InkMuted
+import com.example.villasportmanager.ui.theme.KayanLime
+import com.example.villasportmanager.ui.theme.Mist
+import com.example.villasportmanager.ui.theme.VillaSportManagerTheme
+
+/** Shown until the club's sports have been loaded from the server. */
+val DefaultSportNames = listOf("Padel", "Basketball", "Football", "Tennis")
 
 @Composable
 fun SportSelectionScreen(
     windowSizeClass: WindowSizeClass,
+    sportNames: List<String>,
     onSportSelected: (String) -> Unit,
     onBackClick: () -> Unit,
     onHomeClick: () -> Unit
 ) {
-    val isExpanded = windowSizeClass.widthSizeClass == WindowWidthSizeClass.Expanded
-    
-    val sports = listOf(
-        SportItem("Padel", R.drawable.padel_background),
-        SportItem("Basketball", R.drawable.basketball_background),
-        SportItem("Football", R.drawable.football_background),
-        SportItem("Tennis", R.drawable.tennis_background)
-    )
+    val tier = windowSizeClass.layoutTier
+    val names = sportNames.ifEmpty { DefaultSportNames }
+    val columns = if (tier == LayoutTier.Expanded) 4 else 2
+    val heroHeight = when (tier) {
+        LayoutTier.Expanded -> 300.dp
+        LayoutTier.Medium -> 280.dp
+        LayoutTier.Compact -> 240.dp
+    }
+    val sidePadding = if (tier == LayoutTier.Compact) 16.dp else 40.dp
 
     Column(
         modifier = Modifier
             .fillMaxSize()
-            .background(HomeBackground)
+            .background(Mist)
             .verticalScroll(rememberScrollState())
     ) {
-        SportHeroSection(
-            onBackClick = onBackClick,
-            onHomeClick = onHomeClick,
-            isExpanded = isExpanded
-        )
-
-        Spacer(modifier = Modifier.height(24.dp))
-
-        // Grid of sports buttons (2 columns)
-        Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 24.dp),
-            verticalArrangement = Arrangement.spacedBy(24.dp)
+        PhotoHero(
+            imageRes = R.drawable.sport_hero_background,
+            modifier = Modifier.fillMaxWidth().height(heroHeight)
         ) {
-            val rows = sports.chunked(2)
-            rows.forEach { rowItems ->
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(24.dp)
-                ) {
-                    rowItems.forEach { sport ->
-                        Box(modifier = Modifier.weight(1f)) {
-                            SportButton(
-                                sport = sport,
-                                onClick = { onSportSelected(sport.name) }
-                            )
-                        }
-                    }
-                    if (rowItems.size < 2) {
-                        Spacer(modifier = Modifier.weight(1f))
-                    }
-                }
-            }
-        }
-        
-        Spacer(modifier = Modifier.height(40.dp))
-    }
-}
-
-@Composable
-fun SportHeroSection(
-    onBackClick: () -> Unit,
-    onHomeClick: () -> Unit,
-    isExpanded: Boolean
-) {
-    val height = if (isExpanded) 400.dp else 260.dp
-    val heroShape = GenericShape { size, _ ->
-        moveTo(0f, 0f)
-        lineTo(size.width, 0f)
-        lineTo(size.width, size.height * 0.75f)
-        quadraticTo(
-            size.width * 0.5f, size.height * 1.05f,
-            0f, size.height * 0.85f
-        )
-        close()
-    }
-
-    Box(
-        modifier = Modifier
-            .fillMaxWidth()
-            .height(height)
-            .clip(heroShape)
-    ) {
-        Image(
-            painter = painterResource(id = R.drawable.sport_hero_background),
-            contentDescription = null,
-            modifier = Modifier.fillMaxSize(),
-            contentScale = ContentScale.Crop
-        )
-
-        Box(
-            modifier = Modifier
-                .fillMaxSize()
-                .background(
-                    Brush.linearGradient(
-                        colors = listOf(HeroGreenStart, Color.Transparent),
-                        start = androidx.compose.ui.geometry.Offset(0f, 0f),
-                        end = androidx.compose.ui.geometry.Offset(Float.POSITIVE_INFINITY, 0f)
-                    )
-                )
-        )
-
-        // Dark top overlay for better control visibility
-        Box(
-            modifier = Modifier
-                .fillMaxWidth()
-                .height(80.dp)
-                .background(
-                    Brush.verticalGradient(
-                        colors = listOf(Color.Black.copy(alpha = 0.3f), Color.Transparent)
-                    )
-                )
-        )
-
-        // Top Controls
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(top = 16.dp, start = 16.dp, end = 16.dp),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.Top
-        ) {
-            IconButton(
-                onClick = onBackClick,
+            Row(
                 modifier = Modifier
-                    .size(44.dp)
-                    .background(Color.White.copy(alpha = 0.2f), CircleShape)
-                    .border(1.dp, Color.White.copy(alpha = 0.5f), CircleShape)
+                    .fillMaxWidth()
+                    .statusBarsPadding()
+                    .padding(horizontal = 16.dp, vertical = 12.dp),
+                horizontalArrangement = Arrangement.SpaceBetween
             ) {
-                Icon(Icons.AutoMirrored.Filled.ArrowBack, "Back", tint = Color.White)
+                GlassIconButton(KayanIcons.Back, "Back", onBackClick)
+                GlassIconButton(KayanIcons.Home, "Home", onHomeClick)
             }
-
-            IconButton(
-                onClick = onHomeClick,
-                modifier = Modifier
-                    .size(44.dp)
-                    .background(Color.White.copy(alpha = 0.2f), CircleShape)
-                    .border(1.dp, Color.White.copy(alpha = 0.5f), CircleShape)
+            Column(
+                modifier = Modifier.align(Alignment.Center).padding(horizontal = 24.dp),
+                horizontalAlignment = Alignment.CenterHorizontally
             ) {
-                Icon(Icons.Default.Home, "Home", tint = Color.White)
+                Text(
+                    "Sport Booking",
+                    fontFamily = BricolageGrotesque,
+                    fontWeight = FontWeight.ExtraBold,
+                    fontSize = if (tier == LayoutTier.Compact) 38.sp else 56.sp,
+                    color = KayanLime
+                )
             }
         }
 
         Text(
-            text = "Sport Booking",
-            color = HeroYellow,
-            fontSize = if (isExpanded) 56.sp else 38.sp,
-            fontWeight = FontWeight.ExtraBold,
-            modifier = Modifier.align(Alignment.Center)
+            "Choose a sport",
+            style = MaterialTheme.typography.titleMedium,
+            color = InkMuted,
+            modifier = Modifier.padding(start = sidePadding, end = sidePadding, top = 8.dp, bottom = 16.dp)
         )
-    }
-}
 
-data class SportItem(
-    val name: String,
-    val imageRes: Int
-)
-
-@Composable
-fun SportButton(
-    sport: SportItem,
-    onClick: () -> Unit
-) {
-    Surface(
-        onClick = onClick,
-        modifier = Modifier
-            .fillMaxWidth()
-            .aspectRatio(1.3f)
-            .border(2.dp, HeroYellow, RoundedCornerShape(16.dp)),
-        shape = RoundedCornerShape(16.dp)
-    ) {
-        Box(modifier = Modifier.fillMaxSize()) {
-            Image(
-                painter = painterResource(id = sport.imageRes),
-                contentDescription = null,
-                modifier = Modifier.fillMaxSize(),
-                contentScale = ContentScale.Crop
-            )
-
-            // Semi-transparent overlay
-            Box(
+        Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.TopCenter) {
+            Column(
                 modifier = Modifier
-                    .fillMaxSize()
-                    .background(Color.Black.copy(alpha = 0.25f))
-            )
-
-            Text(
-                text = sport.name.uppercase(),
-                color = Color.White,
-                fontSize = 18.sp,
-                fontWeight = FontWeight.Black,
-                modifier = Modifier.align(Alignment.Center)
-            )
+                    .widthIn(max = 1400.dp)
+                    .fillMaxWidth()
+                    .padding(horizontal = sidePadding)
+                    .navigationBarsPadding()
+                    .padding(bottom = 32.dp),
+                verticalArrangement = Arrangement.spacedBy(16.dp)
+            ) {
+                names.chunked(columns).forEach { rowNames ->
+                    Row(horizontalArrangement = Arrangement.spacedBy(16.dp)) {
+                        rowNames.forEach { name ->
+                            PhotoCard(
+                                imageRes = sportImageRes(name),
+                                label = name,
+                                onClick = { onSportSelected(name) },
+                                labelSize = if (tier == LayoutTier.Compact) 18 else 24,
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .aspectRatio(if (columns == 4) 0.9f else 1.25f)
+                            )
+                        }
+                        repeat(columns - rowNames.size) { Spacer(Modifier.weight(1f)) }
+                    }
+                }
+            }
         }
     }
 }
 
-@OptIn(androidx.compose.material3.windowsizeclass.ExperimentalMaterial3WindowSizeClassApi::class)
-@androidx.compose.ui.tooling.preview.Preview(showBackground = true)
+@OptIn(ExperimentalMaterial3WindowSizeClassApi::class)
+@Preview(showBackground = true, widthDp = 390, heightDp = 844)
 @Composable
-fun SportSelectionScreenPreview() {
+private fun SportSelectionPhonePreview() {
     VillaSportManagerTheme {
         SportSelectionScreen(
-            windowSizeClass = androidx.compose.material3.windowsizeclass.WindowSizeClass.calculateFromSize(androidx.compose.ui.unit.DpSize(400.dp, 800.dp)),
-            onSportSelected = {},
-            onBackClick = {},
-            onHomeClick = {}
+            windowSizeClass = WindowSizeClass.calculateFromSize(DpSize(390.dp, 844.dp)),
+            sportNames = DefaultSportNames,
+            onSportSelected = {}, onBackClick = {}, onHomeClick = {}
+        )
+    }
+}
+
+@OptIn(ExperimentalMaterial3WindowSizeClassApi::class)
+@Preview(showBackground = true, widthDp = 1280, heightDp = 800)
+@Composable
+private fun SportSelectionTabletPreview() {
+    VillaSportManagerTheme {
+        SportSelectionScreen(
+            windowSizeClass = WindowSizeClass.calculateFromSize(DpSize(1280.dp, 800.dp)),
+            sportNames = DefaultSportNames,
+            onSportSelected = {}, onBackClick = {}, onHomeClick = {}
         )
     }
 }

@@ -24,6 +24,16 @@ import java.time.LocalDate
 import java.time.LocalTime
 import java.time.ZonedDateTime
 
+/** Snapshot of a booking that was just created, captured before any cache refresh clears the selection. */
+data class ConfirmedBooking(
+    val bookingId: String,
+    val sportName: String,
+    val courtName: String,
+    val date: LocalDate,
+    val startTime: LocalTime,
+    val endTime: LocalTime
+)
+
 data class CourtState(
     val court: Court,
     val slots: List<TimeSlot> = emptyList(),
@@ -38,6 +48,10 @@ class BookingViewModel(private val repository: BookingRepository) : ViewModel() 
 
     // --- UI Exposed State ---
     var sportsList by mutableStateOf<List<Sport>>(emptyList())
+    /** Every sport the club offers, used by the in-screen sport switcher. */
+    var allSports by mutableStateOf<List<Sport>>(emptyList())
+    /** Name of the sport currently shown (null until [filterBySport] is called). */
+    var currentSportName by mutableStateOf<String?>(null)
     var isLoading by mutableStateOf(false)
 
     val courtStates = mutableStateMapOf<String, CourtState>()
@@ -52,6 +66,8 @@ class BookingViewModel(private val repository: BookingRepository) : ViewModel() 
     var bookingSuccess by mutableStateOf(false)
     
     var lastCreatedBookingId by mutableStateOf<String?>(null)
+    /** Set once a booking succeeds; the screen navigates on it and then calls [consumeConfirmedBooking]. */
+    var confirmedBooking by mutableStateOf<ConfirmedBooking?>(null)
 
     var isCancelling by mutableStateOf(false)
     var cancellationError by mutableStateOf<String?>(null)
@@ -78,35 +94,46 @@ class BookingViewModel(private val repository: BookingRepository) : ViewModel() 
             // Show loading if we are currently syncing OR if the cache hasn't been initialized yet
             isLoading = isSyncing || !isInitialized
             selectedDate = date // Sync back to UI state
-            
+            allSports = sports
+            currentSportName = sportName
+
             if (sportName == null) return@combine
-            
+
             // 1. Filter for the selected sport
             val filtered = sports.filter { it.name.equals(sportName, ignoreCase = true) }
             sportsList = filtered
-            
-            if (filtered.isNotEmpty()) {
-                val sport = filtered.first()
-                
-                // 2. Map all courts and their slots instantly from the repository cache
-                sport.courts.forEach { court ->
-                    val cacheKey = "${court.id}_$date"
-                    val courtBookings = bookings[cacheKey] ?: emptyList<Booking>()
-                    
-                    val generatedSlots = generateSlots(sport, date)
-                    val bookedTimes = courtBookings.mapNotNull { booking ->
+
+            // 2. Rebuild every court of that sport from the repository cache
+            val myUserId = SupabaseModule.client.auth.currentUserOrNull()?.id
+            val newStates = linkedMapOf<String, CourtState>()
+            filtered.firstOrNull()?.let { sport ->
+                sport.courts.sortedBy { it.name }.forEach { court ->
+                    val courtBookings = bookings["${court.id}_$date"] ?: emptyList<Booking>()
+                    val bookedByTime = courtBookings.mapNotNull { booking ->
                         try {
                             val zdt = ZonedDateTime.parse(booking.startTime).withZoneSameInstant(AppConstants.CLUB_ZONE_ID)
-                            if (zdt.toLocalDate() == date) zdt.toLocalTime() else null
+                            if (zdt.toLocalDate() == date) zdt.toLocalTime() to booking else null
                         } catch (e: Exception) { null }
-                    }
+                    }.toMap()
 
-                    val updatedSlots = generatedSlots.map { slot ->
-                        slot.copy(isBooked = bookedTimes.contains(slot.time))
+                    val updatedSlots = generateSlots(sport, date).map { slot ->
+                        val booking = bookedByTime[slot.time]
+                        slot.copy(
+                            isBooked = booking != null,
+                            isMine = booking != null && myUserId != null && booking.userId == myUserId
+                        )
                     }
-                    
-                    courtStates[court.id] = CourtState(court = court, slots = updatedSlots, isChecking = false)
+                    newStates[court.id] = CourtState(court = court, slots = updatedSlots, isChecking = false)
                 }
+            }
+            // Replace (not merge) so courts of a previously shown sport disappear
+            (courtStates.keys - newStates.keys).forEach { courtStates.remove(it) }
+            courtStates.putAll(newStates)
+
+            // Drop a selection that is no longer valid (slot got booked, or court vanished)
+            selectedSlot?.let { (courtId, slot) ->
+                val fresh = newStates[courtId]?.slots?.firstOrNull { it.time == slot.time }
+                if (fresh == null || fresh.isBooked) selectedSlot = null
             }
         }.launchIn(viewModelScope)
     }
@@ -114,6 +141,13 @@ class BookingViewModel(private val repository: BookingRepository) : ViewModel() 
     fun filterBySport(sportName: String, date: LocalDate = LocalDate.now(AppConstants.CLUB_ZONE_ID)) {
         _currentSportNameFlow.value = sportName
         _selectedDateFlow.value = date
+    }
+
+    /** Switches sport from inside the booking screen, keeping the chosen day. */
+    fun switchSport(sportName: String) {
+        if (sportName.equals(_currentSportNameFlow.value, ignoreCase = true)) return
+        selectedSlot = null
+        _currentSportNameFlow.value = sportName
     }
 
     private fun generateSlots(sport: Sport, date: LocalDate): List<TimeSlot> {
@@ -177,7 +211,9 @@ class BookingViewModel(private val repository: BookingRepository) : ViewModel() 
                 return@launch
             }
 
-            val zdt = selectedDate.atTime(slot.time).atZone(AppConstants.CLUB_ZONE_ID)
+            val bookingDate = selectedDate
+            val courtName = courtStates[courtId]?.court?.name ?: ""
+            val zdt = bookingDate.atTime(slot.time).atZone(AppConstants.CLUB_ZONE_ID)
             val startTimeIso = zdt.toOffsetDateTime().toString()
             val endTimeIso = zdt.plusMinutes(sport.slotDurationMinutes.toLong()).toOffsetDateTime().toString()
 
@@ -186,6 +222,14 @@ class BookingViewModel(private val repository: BookingRepository) : ViewModel() 
 
             result.onSuccess { bookingId ->
                 lastCreatedBookingId = bookingId
+                confirmedBooking = ConfirmedBooking(
+                    bookingId = bookingId,
+                    sportName = sport.name,
+                    courtName = courtName,
+                    date = bookingDate,
+                    startTime = slot.time,
+                    endTime = slot.time.plusMinutes(sport.slotDurationMinutes.toLong())
+                )
                 bookingSuccess = true
             }.onFailure {
                 bookingError = when {
@@ -223,6 +267,24 @@ class BookingViewModel(private val repository: BookingRepository) : ViewModel() 
         }
     }
 
+    /** Cancels a specific booking by id (used by the success screen, which owns its own ViewModel). */
+    fun cancelBooking(bookingId: String) {
+        viewModelScope.launch {
+            isCancelling = true
+            cancellationError = null
+            cancellationSuccess = false
+
+            repository.cancelBooking(bookingId)
+                .onSuccess {
+                    cancellationSuccess = true
+                    if (lastCreatedBookingId == bookingId) lastCreatedBookingId = null
+                }
+                .onFailure { cancellationError = it.message ?: "Failed to cancel booking" }
+
+            isCancelling = false
+        }
+    }
+
     fun resetLastBookingStatus() {
         bookingSuccess = false
         cancellationSuccess = false
@@ -231,6 +293,12 @@ class BookingViewModel(private val repository: BookingRepository) : ViewModel() 
     fun getEndTimeForSlot(startTime: LocalTime): LocalTime {
         val duration = sportsList.firstOrNull()?.slotDurationMinutes ?: 0
         return startTime.plusMinutes(duration.toLong())
+    }
+
+    fun consumeConfirmedBooking() {
+        confirmedBooking = null
+        bookingSuccess = false
+        selectedSlot = null
     }
 
     fun clearBookingStatus() {
