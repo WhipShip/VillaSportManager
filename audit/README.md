@@ -131,9 +131,9 @@ Order of application: run `00b` checker → PR 1 SQL → PR 2 SQL → ship PR 3+
 
 ## What was NOT verified
 
-1. **The live database.** Existence, name and definition of the overlap exclusion constraint; RLS policies on `bookings`, `sports`, `courts`; grants and RLS on `app_versions`/`app_patches`; the `supabase_realtime` publication; storage policies on bucket `updates`. The sandbox could not resolve `*.supabase.co`. → Run `supabase/00b_check_booking_integrity.sql` (read-only).
+1. **The live database. Verified by the project owner (2026-11-11):** `supabase/00b_check_booking_integrity.sql` returned PASS on every check after PRs 1 and 2 were applied, and the storage policy on bucket `updates` was checked in the Dashboard. Still unverified from this sandbox, which could not resolve `*.supabase.co`: the `supabase_realtime` publication, and the RLS policies on `sports` and `courts`.
 2. **pgTAP tests were written, not executed.** No Docker/psql/Supabase CLI available. The assumed DDL in `supabase/tests/01_schema_assumed.sql` may differ from the real tables (e.g. `court_id` type).
-3. **Android runtime behaviour.** No device/emulator: installer flow, `FileProvider` paths, `REQUEST_INSTALL_PACKAGES`, behaviour after install, realtime reconnects, actual PostgREST error text/fields in `supabase-kt 3.8.0` (the error mapper therefore matches on message text, which Postgres always includes).
+3. **Android runtime behaviour. Partly verified by the project owner on a physical tablet (2026-11-11):** booking, cancelling and the app update (installed from the APK) all ran as expected. Not covered by that test: realtime reconnects, and PostgREST error text and fields in `supabase-kt 3.8.0` (the error mapper therefore matches on message text, which Postgres always includes).
 4. **Release build / R8.** Only `compileDebugKotlin` and JVM unit tests were run. `assembleRelease` with minification was not.
 5. **Admin page build.** `npm run build` (tsc 7 + vite) was not run; the new tests are excluded from `tsc -b` via `tsconfig` and run with `node --test` only.
 6. **Egypt DST rules** on the tablets' tzdata vs the browsers' ICU; B-10 assumes current rules (last Friday of April → last Thursday of October).
