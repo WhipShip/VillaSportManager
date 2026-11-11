@@ -15,7 +15,9 @@ import com.example.villasportmanager.data.model.TimeSlot
 import com.example.villasportmanager.data.repository.BookingRepository
 import com.example.villasportmanager.di.SupabaseModule
 import com.example.villasportmanager.util.AppConstants
+import com.example.villasportmanager.util.BookingErrorMapper
 import io.github.jan.supabase.auth.auth
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.launchIn
@@ -23,6 +25,7 @@ import kotlinx.coroutines.launch
 import java.time.LocalDate
 import java.time.LocalTime
 import java.time.ZonedDateTime
+import java.util.UUID
 
 /** Snapshot of a booking that was just created, captured before any cache refresh clears the selection. */
 data class ConfirmedBooking(
@@ -45,6 +48,8 @@ class BookingViewModel(private val repository: BookingRepository) : ViewModel() 
     // --- Reactive State Sources ---
     private val _selectedDateFlow = MutableStateFlow(LocalDate.now(AppConstants.CLUB_ZONE_ID))
     private val _currentSportNameFlow = MutableStateFlow<String?>(null)
+    /** Ticks once a minute so slots that have ended flip to "Ended" without waiting for a data refresh. */
+    private val _minuteTick = MutableStateFlow(0L)
 
     // --- UI Exposed State ---
     var sportsList by mutableStateOf<List<Sport>>(emptyList())
@@ -74,6 +79,13 @@ class BookingViewModel(private val repository: BookingRepository) : ViewModel() 
     var cancellationSuccess by mutableStateOf(false)
 
     init {
+        viewModelScope.launch {
+            while (true) {
+                delay(60_000L)
+                _minuteTick.value += 1
+            }
+        }
+
         // Core Reactive Logic: Combine all background data with current UI selections
         combine(
             BookingRepository.sports,
@@ -81,7 +93,8 @@ class BookingViewModel(private val repository: BookingRepository) : ViewModel() 
             BookingRepository.isSyncing,
             BookingRepository.isInitialized,
             _selectedDateFlow,
-            _currentSportNameFlow
+            _currentSportNameFlow,
+            _minuteTick
         ) { args ->
             val sports = args[0] as List<Sport>
             @Suppress("UNCHECKED_CAST")
@@ -90,6 +103,7 @@ class BookingViewModel(private val repository: BookingRepository) : ViewModel() 
             val isInitialized = args[3] as Boolean
             val date = args[4] as LocalDate
             val sportName = args[5] as String?
+            val now = ZonedDateTime.now(AppConstants.CLUB_ZONE_ID)
 
             // Show loading if we are currently syncing OR if the cache hasn't been initialized yet
             isLoading = isSyncing || !isInitialized
@@ -118,9 +132,11 @@ class BookingViewModel(private val repository: BookingRepository) : ViewModel() 
 
                     val updatedSlots = generateSlots(sport, date).map { slot ->
                         val booking = bookedByTime[slot.time]
+                        val slotEnd = date.atTime(slot.time).plusMinutes(sport.slotDurationMinutes.toLong()).atZone(AppConstants.CLUB_ZONE_ID)
                         slot.copy(
                             isBooked = booking != null,
-                            isMine = booking != null && myUserId != null && booking.userId == myUserId
+                            isMine = booking != null && myUserId != null && booking.userId == myUserId,
+                            isPast = !slotEnd.isAfter(now)
                         )
                     }
                     newStates[court.id] = CourtState(court = court, slots = updatedSlots, isChecking = false)
@@ -130,10 +146,10 @@ class BookingViewModel(private val repository: BookingRepository) : ViewModel() 
             (courtStates.keys - newStates.keys).forEach { courtStates.remove(it) }
             courtStates.putAll(newStates)
 
-            // Drop a selection that is no longer valid (slot got booked, or court vanished)
+            // Drop a selection that is no longer valid (slot got booked, ended, or court vanished)
             selectedSlot?.let { (courtId, slot) ->
                 val fresh = newStates[courtId]?.slots?.firstOrNull { it.time == slot.time }
-                if (fresh == null || fresh.isBooked) selectedSlot = null
+                if (fresh == null || fresh.isBooked || fresh.isPast) selectedSlot = null
             }
         }.launchIn(viewModelScope)
     }
@@ -182,14 +198,31 @@ class BookingViewModel(private val repository: BookingRepository) : ViewModel() 
     }
 
     fun onSlotSelected(courtId: String, slot: TimeSlot) {
+        // The cell is not clickable in these states, but guard here too so a stale tap cannot select it.
+        if (slot.isBooked || slot.isPast) return
         selectedSlot = courtId to slot
     }
 
     fun confirmBooking() {
+        if (isBooking) return // double tap while the first request is in flight
         val (courtId, slot) = selectedSlot ?: return
         val sport = sportsList.firstOrNull() ?: return
         val userId = SupabaseModule.client.auth.currentUserOrNull()?.id ?: run {
             bookingError = "User not logged in"
+            return
+        }
+
+        // Last look at the cache before spending a round trip. The database is the real referee
+        // (exclusion constraint + triggers); this only avoids an obviously doomed request.
+        val cached = courtStates[courtId]?.slots?.firstOrNull { it.time == slot.time }
+        if (cached == null || cached.isBooked) {
+            bookingError = BookingErrorMapper.SLOT_TAKEN
+            selectedSlot = null
+            return
+        }
+        if (cached.isPast) {
+            bookingError = BookingErrorMapper.SLOT_ENDED
+            selectedSlot = null
             return
         }
 
@@ -198,10 +231,12 @@ class BookingViewModel(private val repository: BookingRepository) : ViewModel() 
             bookingError = null
             bookingSuccess = false
 
+            // Early, friendly limit check. Not authoritative: two tablets on one account can both pass
+            // it. The DB trigger kayan_check_booking_limit is what actually enforces the rule.
             val activeBookingsResult = repository.countActiveBookingsForSport(userId, sport.id)
             activeBookingsResult.onSuccess { count ->
                 if (count >= 2) {
-                    bookingError = "You have reached the maximum of 2 active bookings for this sport."
+                    bookingError = BookingErrorMapper.LIMIT_REACHED
                     isBooking = false
                     return@launch
                 }
@@ -217,7 +252,13 @@ class BookingViewModel(private val repository: BookingRepository) : ViewModel() 
             val startTimeIso = zdt.toOffsetDateTime().toString()
             val endTimeIso = zdt.plusMinutes(sport.slotDurationMinutes.toLong()).toOffsetDateTime().toString()
 
-            val request = BookingRequest(courtId = courtId, userId = userId, startTime = startTimeIso, endTime = endTimeIso)
+            val request = BookingRequest(
+                courtId = courtId,
+                userId = userId,
+                startTime = startTimeIso,
+                endTime = endTimeIso,
+                clientRequestId = UUID.randomUUID().toString()
+            )
             val result = repository.createBooking(request)
 
             result.onSuccess { bookingId ->
@@ -232,14 +273,7 @@ class BookingViewModel(private val repository: BookingRepository) : ViewModel() 
                 )
                 bookingSuccess = true
             }.onFailure {
-                bookingError = when {
-                    it.message?.contains("duplicate key", ignoreCase = true) == true || 
-                    it.message?.contains("23505") == true ||
-                    it.message?.contains("23P01") == true ||
-                    it.message?.contains("exclusion constraint", ignoreCase = true) == true -> 
-                        "This slot was just booked by someone else. Please pick another one."
-                    else -> it.message ?: "An unexpected error occurred. Please try again."
-                }
+                bookingError = BookingErrorMapper.friendlyMessage(message = it.message, details = it.toString())
                 // Force refresh to show current availability even on failure
                 BookingRepository.refreshAllData(SupabaseModule.client)
             }

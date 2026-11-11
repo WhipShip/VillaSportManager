@@ -213,7 +213,7 @@ private fun SlotButton(
 
     Button(
         onClick = { onSlotSelected(slot) },
-        enabled = !slot.isBooked && !isBooking,
+        enabled = !slot.isBooked && !slot.isPast && !isBooking,
         colors = ButtonDefaults.buttonColors(
             containerColor = containerColor,
             contentColor = contentColor,

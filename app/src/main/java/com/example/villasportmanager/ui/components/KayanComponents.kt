@@ -320,7 +320,7 @@ private fun DatePill(
 // Slot cell
 // ------------------------------------------------------------------------------------------
 
-enum class SlotVisual { Available, Booked, Mine, Selected }
+enum class SlotVisual { Available, Booked, Mine, Selected, Past }
 
 /**
  * One bookable cell. Used by the phone timeline (label on the left, check on the right)
@@ -341,6 +341,7 @@ fun SlotCell(
         SlotVisual.Booked -> SlotBooked to OnSlotBooked
         SlotVisual.Mine -> KayanLime to OnKayanLime
         SlotVisual.Selected -> KayanGreen to Color.White
+        SlotVisual.Past -> Color.Transparent to InkMuted
     }
     val clickable = enabled && (visual == SlotVisual.Available || visual == SlotVisual.Selected)
     val dashed = if (visual == SlotVisual.Available) {

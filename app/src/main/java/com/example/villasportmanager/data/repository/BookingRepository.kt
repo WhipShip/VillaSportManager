@@ -192,12 +192,34 @@ class BookingRepository(private val supabase: SupabaseClient) {
             val response = supabase.postgrest["bookings"].insert(bookingRequest) {
                 select()
             }.decodeSingle<Booking>()
-            
+
             // The realtime listener will trigger a refresh, but we can also do it manually for speed
             refreshAllData(supabase)
             Result.success(response.id)
         } catch (e: Exception) {
-            Result.failure(e)
+            // The INSERT may have committed even though no response reached us (Wi-Fi drop, process
+            // killed by an app update, server timeout). If the request carried an idempotency key,
+            // look the row up before reporting a failure; a constraint violation finds nothing and
+            // the original error is reported.
+            val recovered = bookingRequest.clientRequestId?.let { findByClientRequestId(it) }
+            if (recovered != null) {
+                refreshAllData(supabase)
+                Result.success(recovered.id)
+            } else {
+                Result.failure(e)
+            }
+        }
+    }
+
+    private suspend fun findByClientRequestId(clientRequestId: String): Booking? {
+        return try {
+            supabase.postgrest["bookings"]
+                .select {
+                    filter { eq("client_request_id", clientRequestId) }
+                    limit(1)
+                }.decodeList<Booking>().firstOrNull()
+        } catch (e: Exception) {
+            null
         }
     }
 

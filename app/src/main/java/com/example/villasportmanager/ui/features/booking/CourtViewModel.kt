@@ -77,8 +77,10 @@ class CourtViewModel(private val repository: BookingRepository) : ViewModel() {
                 } catch (e: Exception) { null }
             }
 
+            val now = ZonedDateTime.now(AppConstants.CLUB_ZONE_ID)
             slots = generatedSlots.map { slot ->
-                slot.copy(isBooked = bookedTimes.contains(slot.time))
+                val slotEnd = date.atTime(slot.time).plusMinutes(currentDuration!!.toLong()).atZone(AppConstants.CLUB_ZONE_ID)
+                slot.copy(isBooked = bookedTimes.contains(slot.time), isPast = !slotEnd.isAfter(now))
             }
         }.launchIn(viewModelScope)
     }
