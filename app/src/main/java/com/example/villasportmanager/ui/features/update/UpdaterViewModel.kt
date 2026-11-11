@@ -3,18 +3,43 @@ package com.example.villasportmanager.ui.features.update
 import android.content.Context
 import android.util.Log
 import androidx.lifecycle.ViewModel
+import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
 import com.example.villasportmanager.BuildConfig
 import com.example.villasportmanager.data.model.PatchInfo
 import com.example.villasportmanager.data.model.VersionInfo
+import com.example.villasportmanager.data.repository.BookingRepository
 import com.example.villasportmanager.data.repository.UpdateRepository
 import com.example.villasportmanager.util.UpdateUtils
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import java.io.File
+
+/** Remembers "Later" across launches so a kiosk is not re-prompted on every Activity creation. */
+interface UpdateSnooze {
+    fun isSnoozed(): Boolean
+    fun snooze(hours: Int)
+
+    object None : UpdateSnooze {
+        override fun isSnoozed() = false
+        override fun snooze(hours: Int) {}
+    }
+
+    class SharedPrefs(context: Context) : UpdateSnooze {
+        private val prefs = context.applicationContext.getSharedPreferences("kayan_updates", Context.MODE_PRIVATE)
+        override fun isSnoozed() = prefs.getLong(KEY, 0L) > System.currentTimeMillis()
+        override fun snooze(hours: Int) {
+            prefs.edit().putLong(KEY, System.currentTimeMillis() + hours * 3_600_000L).apply()
+        }
+        private companion object { const val KEY = "snooze_until" }
+    }
+}
 
 sealed class UpdateState {
     object Idle : UpdateState()
@@ -27,14 +52,36 @@ sealed class UpdateState {
 }
 
 class UpdaterViewModel(
-    private val repository: UpdateRepository = UpdateRepository()
+    private val repository: UpdateRepository = UpdateRepository(),
+    private val snooze: UpdateSnooze = UpdateSnooze.None
 ) : ViewModel() {
 
     private val _updateState = MutableStateFlow<UpdateState>(UpdateState.Idle)
     val updateState: StateFlow<UpdateState> = _updateState.asStateFlow()
 
+    /** True while the villa is somewhere other than the home/sign-in screen (set by AppNavigation). */
+    private val _userBusy = MutableStateFlow(false)
+
+    /**
+     * Whether the updater may put a prompt in front of the user right now: not mid-flow, and no
+     * booking write waiting for the server. Downloads continue in the background regardless.
+     */
+    val canPrompt: StateFlow<Boolean> = combine(_userBusy, BookingRepository.inFlightWrites) { busy, writes ->
+        !busy && writes == 0
+    }.stateIn(viewModelScope, SharingStarted.Eagerly, true)
+
     private var latestApkFile: File? = null
     private var downloadJob: Job? = null
+
+    fun setUserBusy(busy: Boolean) {
+        _userBusy.value = busy
+    }
+
+    /** "Later": hide the prompt for a few hours; the APK stays cached if already downloaded. */
+    fun later() {
+        snooze.snooze(SNOOZE_HOURS)
+        if (_updateState.value is UpdateState.UpdateAvailable) _updateState.value = UpdateState.Idle
+    }
 
     fun checkForUpdates(isSilent: Boolean = false) {
         val current = _updateState.value
@@ -42,6 +89,10 @@ class UpdaterViewModel(
         // download or patch that is in progress, or forget an APK that is ready.
         if (current is UpdateState.Downloading || current is UpdateState.Patching || current is UpdateState.ReadyToInstall) {
             Log.d(TAG, "Update already in progress ($current); ignoring check")
+            return
+        }
+        if (isSilent && snooze.isSnoozed()) {
+            Log.d(TAG, "Update prompt snoozed; skipping silent check")
             return
         }
         val currentVersion = BuildConfig.VERSION_CODE
@@ -144,6 +195,12 @@ class UpdaterViewModel(
     }
 
     fun install(context: Context) {
+        // The package installer kills this process. A booking INSERT/UPDATE that is still waiting
+        // for its response would be committed server-side but never acknowledged on the kiosk.
+        if (BookingRepository.inFlightWrites.value > 0) {
+            Log.w(TAG, "Install requested while a booking write is in flight; ignoring")
+            return
+        }
         latestApkFile?.takeIf { it.exists() }?.let {
             UpdateUtils.installApk(context, it)
         } ?: run {
@@ -158,7 +215,15 @@ class UpdaterViewModel(
         _updateState.value = UpdateState.Idle
     }
 
-    private companion object {
-        const val TAG = "UpdaterViewModel"
+    companion object {
+        private const val TAG = "UpdaterViewModel"
+        private const val SNOOZE_HOURS = 4
+
+        /** Factory for MainActivity: persists "Later" in SharedPreferences. */
+        fun factory(context: Context): ViewModelProvider.Factory = object : ViewModelProvider.Factory {
+            @Suppress("UNCHECKED_CAST")
+            override fun <T : ViewModel> create(modelClass: Class<T>): T =
+                UpdaterViewModel(snooze = UpdateSnooze.SharedPrefs(context)) as T
+        }
     }
 }

@@ -44,6 +44,23 @@ class BookingRepository(private val supabase: SupabaseClient) {
 
         private val syncMutex = Mutex()
         private var isRealtimeInitialized = false
+
+        /**
+         * Number of booking writes (create/cancel) currently waiting for the server. The updater
+         * uses it to avoid prompting for, or starting, an install while a request is in flight:
+         * the installer kills the process and a committed INSERT would never be acknowledged.
+         */
+        private val _inFlightWrites = MutableStateFlow(0)
+        val inFlightWrites = _inFlightWrites.asStateFlow()
+
+        private suspend fun <T> trackedWrite(block: suspend () -> T): T {
+            _inFlightWrites.value += 1
+            try {
+                return block()
+            } finally {
+                _inFlightWrites.value -= 1
+            }
+        }
         private var lastPreloadDate: LocalDate? = null
 
         /**
@@ -187,12 +204,12 @@ class BookingRepository(private val supabase: SupabaseClient) {
         }
     }
 
-    suspend fun createBooking(bookingRequest: BookingRequest): Result<String> {
-        return try {
+    suspend fun createBooking(bookingRequest: BookingRequest): Result<String> = trackedWrite {
+        try {
             val response = supabase.postgrest["bookings"].insert(bookingRequest) {
                 select()
             }.decodeSingle<Booking>()
-            
+
             // The realtime listener will trigger a refresh, but we can also do it manually for speed
             refreshAllData(supabase)
             Result.success(response.id)
@@ -234,8 +251,8 @@ class BookingRepository(private val supabase: SupabaseClient) {
         }
     }
 
-    suspend fun cancelBooking(bookingId: String): Result<Unit> {
-        return try {
+    suspend fun cancelBooking(bookingId: String): Result<Unit> = trackedWrite {
+        try {
             supabase.postgrest["bookings"].update(
                 update = {
                     set("status", "cancelled")
