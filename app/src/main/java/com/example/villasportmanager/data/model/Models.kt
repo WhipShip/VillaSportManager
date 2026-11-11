@@ -45,7 +45,14 @@ data class BookingRequest(
     @SerialName("user_id") val userId: String,
     @SerialName("start_time") val startTime: String,
     @SerialName("end_time") val endTime: String,
-    val status: String = "confirmed"
+    val status: String = "confirmed",
+    /**
+     * Idempotency key (UUID) generated once per tap of "Book it". The DB has a unique index on it
+     * (supabase/02_booking_integrity.sql), so if the kiosk dies after the INSERT was sent but before
+     * the response arrived (Wi-Fi drop, app update killing the process) the booking can be found
+     * again instead of being silently duplicated or lost.
+     */
+    @SerialName("client_request_id") val clientRequestId: String? = null
 )
 
 // This is just for our UI state - not for Supabase
@@ -53,5 +60,7 @@ data class TimeSlot(
     val time: LocalTime,
     val isBooked: Boolean = false,
     /** True when the booking occupying this slot belongs to the signed-in villa. */
-    val isMine: Boolean = false
+    val isMine: Boolean = false,
+    /** True when the slot has already ended (club time). Villas cannot book it; the DB rejects it too. */
+    val isPast: Boolean = false
 )

@@ -165,6 +165,7 @@ private class BookingUiState(
     fun visualFor(courtId: String, slot: TimeSlot): SlotVisual = when {
         slot.isMine -> SlotVisual.Mine
         slot.isBooked -> SlotVisual.Booked
+        slot.isPast -> SlotVisual.Past
         selection?.first == courtId && selection.second.time == slot.time -> SlotVisual.Selected
         else -> SlotVisual.Available
     }
@@ -334,6 +335,7 @@ private fun slotLabel(visual: SlotVisual, time: LocalTime, state: BookingUiState
     SlotVisual.Booked -> "Booked"
     SlotVisual.Mine -> "Your booking"
     SlotVisual.Selected -> "Selected · ${KayanFormat.rangeShort(time, state.endOf(time))}"
+    SlotVisual.Past -> "Ended"
 }
 
 @Composable
