@@ -14,17 +14,40 @@ import java.io.FileOutputStream
 
 object UpdateUtils {
 
-    suspend fun applyPatch(context: Context, patchFile: File, newApkFile: File) = withContext(Dispatchers.IO) {
+    /**
+     * Applies a bsdiff [patchFile] to the installed APK and writes the result to [newApkFile].
+     *
+     * A bsdiff patch is only meaningful for the exact bytes it was generated against. When the
+     * server published [baseSha256] the installed APK is checked first (a mismatch means "this
+     * patch is not for this build": wrong signing, rebuilt with the same versionCode, split APK).
+     * When [targetSha256] is published the output is checked too. The result is written to a
+     * `.part` file and sealed atomically, so a failed patch never leaves a bogus `update.apk`.
+     */
+    suspend fun applyPatch(
+        context: Context,
+        patchFile: File,
+        newApkFile: File,
+        baseSha256: String? = null,
+        targetSha256: String? = null
+    ) = withContext(Dispatchers.IO) {
         // 1. Get the path of the currently installed APK
         val currentApkPath = context.packageManager.getApplicationInfo(context.packageName, 0).sourceDir
         val oldApkFile = File(currentApkPath)
+        UpdateIntegrity.verifyFile(oldApkFile, baseSha256, null, "Installed APK (patch base)")
 
-        // 2. Apply bspatch
-        val oldBytes = oldApkFile.readBytes()
-        val patchBytes = patchFile.readBytes()
-        
-        FileOutputStream(newApkFile).use { fos ->
-            Patch.patch(oldBytes, patchBytes, fos)
+        // 2. Apply bspatch into a temporary file
+        val part = File(newApkFile.parentFile, newApkFile.name + ".part")
+        try {
+            val oldBytes = oldApkFile.readBytes()
+            val patchBytes = patchFile.readBytes()
+            FileOutputStream(part).use { fos ->
+                Patch.patch(oldBytes, patchBytes, fos)
+            }
+            UpdateIntegrity.verifyFile(part, targetSha256, null, "Patched APK")
+            UpdateIntegrity.seal(part, newApkFile)
+        } catch (e: Exception) {
+            part.delete()
+            throw e
         }
     }
 
