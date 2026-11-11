@@ -17,9 +17,15 @@ fun UpdaterDialog(
     onDismiss: () -> Unit = { viewModel.dismiss() }
 ) {
     val state by viewModel.updateState.collectAsState()
+    val canPrompt by viewModel.canPrompt.collectAsState()
     val context = LocalContext.current
 
     if (state is UpdateState.Idle) return
+    // Never interrupt a villa mid-booking: prompts wait until they are back on the home screen and
+    // no booking write is in flight. Progress states keep running silently in the background.
+    val isPrompt = state is UpdateState.UpdateAvailable || state is UpdateState.ReadyToInstall ||
+        state is UpdateState.Downloading || state is UpdateState.Patching
+    if (isPrompt && !canPrompt) return
 
     AlertDialog(
         onDismissRequest = onDismiss,
@@ -94,10 +100,10 @@ fun UpdaterDialog(
             }
         },
         dismissButton = {
-            if (state !is UpdateState.Downloading && state !is UpdateState.Patching) {
-                TextButton(onClick = onDismiss) {
-                    Text("Close")
-                }
+            when (state) {
+                is UpdateState.Downloading, is UpdateState.Patching -> {}
+                is UpdateState.UpdateAvailable -> TextButton(onClick = { viewModel.later() }) { Text("Later") }
+                else -> TextButton(onClick = onDismiss) { Text("Close") }
             }
         }
     )

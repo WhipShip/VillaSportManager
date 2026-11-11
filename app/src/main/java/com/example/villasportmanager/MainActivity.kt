@@ -35,7 +35,7 @@ class MainActivity : ComponentActivity() {
         enableEdgeToEdge()
         setContent {
             val windowSizeClass = calculateWindowSizeClass(this)
-            val updaterViewModel: UpdaterViewModel = viewModel()
+            val updaterViewModel: UpdaterViewModel = viewModel(factory = UpdaterViewModel.factory(applicationContext))
 
             LaunchedEffect(Unit) {
                 updaterViewModel.checkForUpdates(isSilent = true)
@@ -48,7 +48,9 @@ class MainActivity : ComponentActivity() {
                 ) {
                     AppNavigation(
                         windowSizeClass = windowSizeClass,
-                        onUpdateClick = { updaterViewModel.checkForUpdates(isSilent = false) }
+                        onUpdateClick = { updaterViewModel.checkForUpdates(isSilent = false) },
+                        // Only the home and sign-in screens are safe places to interrupt a villa.
+                        onRouteChanged = { route -> updaterViewModel.setUserBusy(route != null && route != "home" && route != "signin") }
                     )
                     UpdaterDialog(viewModel = updaterViewModel)
                 }

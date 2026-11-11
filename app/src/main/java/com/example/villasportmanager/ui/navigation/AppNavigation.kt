@@ -21,6 +21,7 @@ import androidx.navigation.NavHostController
 import androidx.navigation.NavType
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
+import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navArgument
 import com.example.villasportmanager.data.repository.BookingRepository
@@ -50,7 +51,9 @@ import kotlinx.coroutines.launch
 @Composable
 fun AppNavigation(
     windowSizeClass: WindowSizeClass,
-    onUpdateClick: () -> Unit
+    onUpdateClick: () -> Unit,
+    /** Reports the current route so the updater can hold its prompt while a villa is mid-flow. */
+    onRouteChanged: (String?) -> Unit = {}
 ) {
     val scope = rememberCoroutineScope()
 
@@ -77,6 +80,9 @@ fun AppNavigation(
 
     val startDestination = if (sessionStatus is SessionStatus.Authenticated) "home" else "signin"
     val navController = rememberNavController()
+    val backStackEntry by navController.currentBackStackEntryAsState()
+    val currentRoute = backStackEntry?.destination?.route
+    LaunchedEffect(currentRoute) { onRouteChanged(currentRoute) }
 
     NavHost(
         navController = navController,
